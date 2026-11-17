@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Money Planner</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1b1f24;--muted:#667085;--line:#e3e6ea;--accent:#0f766e;--red:#b42318;--green:#067647;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14171a;--card:#1d2125;--text:#eceff1;--muted:#9aa4ad;--line:#2d333a;--accent:#2dd4bf;--red:#fda29b;--green:#6ce9a6;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#14171a;--card:#1d2125;--text:#eceff1;--muted:#9aa4ad;--line:#2d333a;--accent:#2dd4bf;--red:#fda29b;--green:#6ce9a6;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+main{max-width:640px;margin:0 auto;padding:14px}
+h1{font-size:1.25rem;margin:0}h2{font-size:1rem;margin:0 0 10px}
+.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.tabs{display:flex;gap:6px;overflow-x:auto;margin-bottom:12px}
+.tabs button{background:var(--card);color:var(--muted);border:1px solid var(--line);white-space:nowrap}
+.tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+input,textarea,button{font:inherit;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text)}
+input,textarea{flex:1 1 130px;min-width:0}textarea{width:100%;min-height:80px}
+button{background:var(--accent);color:#fff;border:0;cursor:pointer;font-weight:600}
+button.ghost{background:transparent;color:var(--muted);border:1px solid var(--line);padding:4px 8px;font-weight:500}
+.item{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+.muted{color:var(--muted);font-size:.88rem}.red{color:var(--red)}.green{color:var(--green)}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;text-align:center}
+.cal .h{color:var(--muted);font-size:.78rem}
+.cal button{background:var(--bg);color:var(--text);border:1px solid var(--line);padding:8px 0;font-weight:500;position:relative}
+.cal button.sel{outline:2px solid var(--accent)}
+.dots{display:block;height:6px;font-size:8px;line-height:6px}
+#report{display:none}
+@media print{.app{display:none}#report{display:block}body{background:#fff;color:#000}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #ccc;padding:4px;text-align:left}}
+</style>
+</head>
+<body>
+<main class="app">
+<div class="top"><h1>Money Planner</h1><button id="pdf">Save as PDF</button></div>
+<div class="tabs" id="tabs"></div>
+<div id="view"></div>
+</main>
+<main id="report"></main>
+
+<script>
+var KEY="money-planner-v1",tab="Expenses",sel=today(),cm=new Date();
+var S={exp:[],sav:[],notes:[]};
+try{var r=localStorage.getItem(KEY);if(r){var q=JSON.parse(r);if(q&&q.exp)S=q;}}catch(e){}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+function p2(n){return n<10?"0"+n:""+n;}
+function today(){var d=new Date();return d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate());}
+function fmt(n){return "Shs "+Math.round(n).toLocaleString("en-US");}
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];});}
+function sum(a){return a.reduce(function(t,x){return t+x.amt;},0);}
+function on(a,d){return a.filter(function(x){return x.d===d;});}
+function id(){return Date.now()+""+Math.floor(Math.random()*1000);}
+function dateRow(){return '<div class="row"><input type="date" id="dt" value="'+sel+'"></div>';}
+
+var TABS=["Expenses","Savings","Calculator","Calendar","Notes"];
+function render(){
+  document.getElementById("tabs").innerHTML=TABS.map(function(t){return '<button data-tab="'+t+'" class="'+(t===tab?"on":"")+'">'+t+'</button>';}).join("");
+  var v=document.getElementById("view"),h="";
+  if(tab==="Expenses"){
+    var l=on(S.exp,sel);
+    h='<div class="card"><h2>Add expense</h2>'+dateRow()+'<div class="row"><input id="ex" placeholder="e.g. food-shs 1000"><button id="addEx">Add</button></div><p class="muted">Write the item, then the amount: food 1000, transport-shs 2500.</p></div>'+
+      '<div class="card"><h2>Spent on '+sel+': <span class="red">'+fmt(sum(l))+'</span></h2>'+
+      (l.map(function(x){return '<div class="item"><span>'+esc(x.cat)+'</span><span>'+fmt(x.amt)+' <button class="ghost" data-delx="'+x.id+'">x</button></span></div>';}).join("")||'<p class="muted">Nothing yet for this day.</p>')+'</div>';
+  }else if(tab==="Savings"){
+    var all=S.sav.slice().sort(function(a,b){return a.d<b.d?1:-1;});
+    h='<div class="card"><h2>Save for a day</h2>'+dateRow()+'<div class="row"><input id="sv" type="number" min="0" inputmode="numeric" placeholder="Amount saved"><button id="addSv">Add</button></div></div>'+
+      '<div class="card"><h2>Total saved: <span class="green">'+fmt(sum(S.sav))+'</span></h2>'+
+      (all.map(function(x){return '<div class="item"><span>'+x.d+'</span><span>'+fmt(x.amt)+' <button class="ghost" data-dels="'+x.id+'">x</button></span></div>';}).join("")||'<p class="muted">No savings recorded yet.</p>')+'</div>';
+  }else if(tab==="Calculator"){
+    h='<div class="card"><h2>Savings calculator</h2><div class="row"><input id="goal" type="number" placeholder="Goal amount"><input id="have" type="number" placeholder="Already saved"><button class="ghost" id="useTot">Use my total</button></div>'+
+      '<div class="row"><input id="per" type="number" placeholder="Save per day"><button id="c1">Days to reach goal</button></div>'+
+      '<div class="row"><input id="by" type="date"><button id="c2">Per day needed by date</button></div><div id="out" style="font-weight:600"></div></div>';
+  }else if(tab==="Calendar"){
+    var y=cm.getFullYear(),m=cm.getMonth(),first=new Date(y,m,1).getDay(),n=new Date(y,m+1,0).getDate();
+    h='<div class="card"><div class="top"><button class="ghost" id="pm">&lt;</button><b>'+cm.toLocaleDateString([], {month:"long",year:"numeric"})+'</b><button class="ghost" id="nm">&gt;</button></div><div class="cal">'+
+      ["S","M","T","W","T","F","S"].map(function(d){return '<div class="h">'+d+'</div>';}).join("")+Array(first+1).join("<div></div>");
+    for(var d=1;d<=n;d++){var ds=y+"-"+p2(m+1)+"-"+p2(d);
+      h+='<button data-day="'+ds+'" class="'+(ds===sel?"sel":"")+'">'+d+'<span class="dots">'+(on(S.exp,ds).length?'<span class="red">●</span>':"")+(on(S.sav,ds).length?'<span class="green">●</span>':"")+(on(S.notes,ds).length?'<span class="muted">●</span>':"")+'</span></button>';}
+    h+='</div></div><div class="card"><h2>'+sel+'</h2><p>Spent: <b class="red">'+fmt(sum(on(S.exp,sel)))+'</b> &middot; Saved: <b class="green">'+fmt(sum(on(S.sav,sel)))+'</b></p>'+
+      on(S.notes,sel).map(function(x){return '<p class="muted">'+esc(x.text)+'</p>';}).join("")+'<p class="muted">Red = expenses, green = savings, grey = notes.</p></div>';
+  }else{
+    h='<div class="card"><h2>Add note</h2>'+dateRow()+'<textarea id="nt" placeholder="Write a note"></textarea><div class="row" style="margin-top:8px"><button id="addNt">Save note</button></div></div><div class="card"><h2>All notes</h2>'+
+      (S.notes.slice().sort(function(a,b){return a.d<b.d?1:-1;}).map(function(x){return '<div class="item"><span><span class="muted">'+x.d+'</span><br>'+esc(x.text)+'</span><button class="ghost" data-deln="'+x.id+'">x</button></div>';}).join("")||'<p class="muted">No notes yet.</p>')+'</div>';
+  }
+  v.innerHTML=h;
+}
+
+function parseExp(t){
+  var m=t.match(/^(.*?)[\s\-:=]*(?:(?:shs|ugx|ush|sh)\.?\s*)?([\d,]+(?:\.\d+)?)\s*$/i);
+  if(!m)return null;
+  var cat=m[1].replace(/[\s\-:=]+$/,"").replace(/\b(shs|ugx|ush|sh)$/i,"").replace(/[\s\-:=]+$/,"").trim()||"Other";
+  return {cat:cat,amt:parseFloat(m[2].replace(/,/g,""))};
+}
+function val(i){var e=document.getElementById(i);return e?e.value:"";}
+
+document.addEventListener("click",function(e){
+  var t=e.target,a=function(k){return t.getAttribute(k);},dt=val("dt");
+  if(dt)sel=dt;
+  if(a("data-tab")){tab=a("data-tab");render();return;}
+  if(a("data-day")){sel=a("data-day");render();return;}
+  if(a("data-delx")){S.exp=S.exp.filter(function(x){return x.id!==a("data-delx");});save();render();return;}
+  if(a("data-dels")){S.sav=S.sav.filter(function(x){return x.id!==a("data-dels");});save();render();return;}
+  if(a("data-deln")){S.notes=S.notes.filter(function(x){return x.id!==a("data-deln");});save();render();return;}
+  if(t.id==="addEx"){var r=parseExp(val("ex").trim());if(!r){alert("Try something like: food-shs 1000");return;}S.exp.push({id:id(),d:sel,cat:r.cat,amt:r.amt});save();render();}
+  if(t.id==="addSv"){var n=parseFloat(val("sv"));if(!(n>0))return;S.sav.push({id:id(),d:sel,amt:n});save();render();}
+  if(t.id==="addNt"){var x=val("nt").trim();if(!x)return;S.notes.push({id:id(),d:sel,text:x});save();render();}
+  if(t.id==="pm"){cm=new Date(cm.getFullYear(),cm.getMonth()-1,1);render();}
+  if(t.id==="nm"){cm=new Date(cm.getFullYear(),cm.getMonth()+1,1);render();}
+  if(t.id==="useTot"){document.getElementById("have").value=sum(S.sav);}
+  if(t.id==="c1"||t.id==="c2"){
+    var g=parseFloat(val("goal")),h=parseFloat(val("have"))||0,left=g-h,o=document.getElementById("out");
+    if(!(g>0)){o.textContent="Enter a goal amount.";return;}
+    if(left<=0){o.textContent="Goal reached already.";return;}
+    if(t.id==="c1"){var pd=parseFloat(val("per"));o.textContent=pd>0?"About "+Math.ceil(left/pd)+" days to save "+fmt(left)+".":"Enter how much you save per day.";}
+    else{var b=val("by");if(!b){o.textContent="Pick a date.";return;}
+      var days=Math.ceil((new Date(b+"T00:00:00")-new Date(today()+"T00:00:00"))/864e5);
+      o.textContent=days>0?"Save about "+fmt(left/days)+" per day for "+days+" days.":"Pick a date in the future.";}
+  }
+  if(t.id==="pdf")printReport();
+});
+document.addEventListener("change",function(e){if(e.target.id==="dt"){sel=e.target.value;if(tab==="Expenses"||tab==="Savings")render();}});
+
+function printReport(){
+  var ym=sel.slice(0,7),inM=function(a){return a.filter(function(x){return x.d.slice(0,7)===ym;}).sort(function(a,b){return a.d>b.d?1:-1;});};
+  var E=inM(S.exp),V=inM(S.sav),cats={};
+  E.forEach(function(x){cats[x.cat]=(cats[x.cat]||0)+x.amt;});
+  var rows=function(a,f){return a.map(f).join("")||'<tr><td colspan="3">None</td></tr>';};
+  document.getElementById("report").innerHTML='<h1>Money report: '+ym+'</h1>'+
+    '<p>Total spent: <b>'+fmt(sum(E))+'</b><br>Total saved: <b>'+fmt(sum(V))+'</b></p>'+
+    '<h2>Spending by item</h2><table>'+Object.keys(cats).map(function(k){return '<tr><td>'+esc(k)+'</td><td>'+fmt(cats[k])+'</td></tr>';}).join("")+'</table>'+
+    '<h2>Expenses</h2><table>'+rows(E,function(x){return '<tr><td>'+x.d+'</td><td>'+esc(x.cat)+'</td><td>'+fmt(x.amt)+'</td></tr>';})+'</table>'+
+    '<h2>Savings</h2><table>'+rows(V,function(x){return '<tr><td>'+x.d+'</td><td></td><td>'+fmt(x.amt)+'</td></tr>';})+'</table>';
+  window.print();
+}
+render();
+</script>
+</body>
+</html>
