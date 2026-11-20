@@ -31,12 +31,14 @@ button.ghost{background:transparent;color:var(--muted);border:1px solid var(--li
 .cal button.sel{outline:2px solid var(--accent)}
 .dots{display:block;height:6px;font-size:8px;line-height:6px}
 #report{display:none}
+#warn{display:none;border:1px solid var(--red);color:var(--red);border-radius:8px;padding:10px;margin-bottom:10px;font-weight:600}
 @media print{.app{display:none}#report{display:block}body{background:#fff;color:#000}table{width:100%;border-collapse:collapse}td,th{border-bottom:1px solid #ccc;padding:4px;text-align:left}}
 </style>
 </head>
 <body>
 <main class="app">
 <div class="top"><h1>Money Planner</h1><button id="pdf">Save as PDF</button></div>
+<div id="warn" role="alert"></div>
 <div class="tabs" id="tabs"></div>
 <div id="view"></div>
 </main>
@@ -46,7 +48,8 @@ button.ghost{background:transparent;color:var(--muted);border:1px solid var(--li
 var KEY="money-planner-v1",tab="Expenses",sel=today(),cm=new Date();
 var S={exp:[],sav:[],notes:[]};
 try{var r=localStorage.getItem(KEY);if(r){var q=JSON.parse(r);if(q&&q.exp)S=q;}}catch(e){}
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S));}catch(e){}}
+function warn(m){var w=document.getElementById("warn");w.textContent=m;w.style.display=m?"block":"none";}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S));warn("");}catch(e){warn("Could not save your data on this device. Copy a backup from the Backup tab now, or this data may be lost.");}}
 function p2(n){return n<10?"0"+n:""+n;}
 function today(){var d=new Date();return d.getFullYear()+"-"+p2(d.getMonth()+1)+"-"+p2(d.getDate());}
 function fmt(n){return "Shs "+Math.round(n).toLocaleString("en-US");}
@@ -55,25 +58,36 @@ function sum(a){return a.reduce(function(t,x){return t+x.amt;},0);}
 function on(a,d){return a.filter(function(x){return x.d===d;});}
 function id(){return Date.now()+""+Math.floor(Math.random()*1000);}
 function dateRow(){return '<div class="row"><input type="date" id="dt" value="'+sel+'"></div>';}
+var ed=null;
+function cur(k){return ed&&ed.k===k?(S[k].filter(function(x){return x.id===ed.id;})[0]||null):null;}
+function nav(){return '<div class="top"><button class="ghost" id="pm">&lt;</button><b>'+cm.toLocaleDateString([], {month:"long",year:"numeric"})+'</b><button class="ghost" id="nm">&gt;</button></div>';}
 
-var TABS=["Expenses","Savings","Calculator","Calendar","Notes"];
+var TABS=["Expenses","Savings","Calculator","Calendar","Notes","Summary","Backup"];
 function render(){
   document.getElementById("tabs").innerHTML=TABS.map(function(t){return '<button data-tab="'+t+'" class="'+(t===tab?"on":"")+'">'+t+'</button>';}).join("");
   var v=document.getElementById("view"),h="";
   if(tab==="Expenses"){
-    var l=on(S.exp,sel);
-    h='<div class="card"><h2>Add expense</h2>'+dateRow()+'<div class="row"><input id="ex" placeholder="e.g. food-shs 1000"><button id="addEx">Add</button></div><p class="muted">Write the item, then the amount: food 1000, transport-shs 2500.</p></div>'+
+    var l=on(S.exp,sel),ce=cur("exp");
+    h='<div class="card"><h2>'+(ce?"Edit":"Add")+' expense</h2>'+dateRow()+'<div class="row"><input id="ex" placeholder="e.g. food-shs 1000" value="'+(ce?esc(ce.cat+" "+ce.amt):"")+'"><button id="addEx">'+(ce?"Update":"Add")+'</button>'+(ce?'<button class="ghost" id="cancel">Cancel</button>':"")+'</div><p class="muted">Write the item, then the amount: food 1000, transport-shs 2500.</p></div>'+
       '<div class="card"><h2>Spent on '+sel+': <span class="red">'+fmt(sum(l))+'</span></h2>'+
-      (l.map(function(x){return '<div class="item"><span>'+esc(x.cat)+'</span><span>'+fmt(x.amt)+' <button class="ghost" data-delx="'+x.id+'">x</button></span></div>';}).join("")||'<p class="muted">Nothing yet for this day.</p>')+'</div>';
+      (l.map(function(x){return '<div class="item"><span>'+esc(x.cat)+'</span><span>'+fmt(x.amt)+' <button class="ghost" data-edx="'+x.id+'">Edit</button> <button class="ghost" data-delx="'+x.id+'">Delete</button></span></div>';}).join("")||'<p class="muted">Nothing yet for this day.</p>')+'</div>';
   }else if(tab==="Savings"){
     var all=S.sav.slice().sort(function(a,b){return a.d<b.d?1:-1;});
-    h='<div class="card"><h2>Save for a day</h2>'+dateRow()+'<div class="row"><input id="sv" type="number" min="0" inputmode="numeric" placeholder="Amount saved"><button id="addSv">Add</button></div></div>'+
+    h='<div class="card"><h2>'+(cur("sav")?"Edit saving":"Save for a day")+'</h2>'+dateRow()+'<div class="row"><input id="sv" type="number" min="0" inputmode="numeric" placeholder="Amount saved" value="'+(cur("sav")?cur("sav").amt:"")+'"><button id="addSv">'+(cur("sav")?"Update":"Add")+'</button>'+(cur("sav")?'<button class="ghost" id="cancel">Cancel</button>':"")+'</div></div>'+
       '<div class="card"><h2>Total saved: <span class="green">'+fmt(sum(S.sav))+'</span></h2>'+
-      (all.map(function(x){return '<div class="item"><span>'+x.d+'</span><span>'+fmt(x.amt)+' <button class="ghost" data-dels="'+x.id+'">x</button></span></div>';}).join("")||'<p class="muted">No savings recorded yet.</p>')+'</div>';
+      (all.map(function(x){return '<div class="item"><span>'+x.d+'</span><span>'+fmt(x.amt)+' <button class="ghost" data-eds="'+x.id+'">Edit</button> <button class="ghost" data-dels="'+x.id+'">Delete</button></span></div>';}).join("")||'<p class="muted">No savings recorded yet.</p>')+'</div>';
   }else if(tab==="Calculator"){
     h='<div class="card"><h2>Savings calculator</h2><div class="row"><input id="goal" type="number" placeholder="Goal amount"><input id="have" type="number" placeholder="Already saved"><button class="ghost" id="useTot">Use my total</button></div>'+
       '<div class="row"><input id="per" type="number" placeholder="Save per day"><button id="c1">Days to reach goal</button></div>'+
       '<div class="row"><input id="by" type="date"><button id="c2">Per day needed by date</button></div><div id="out" style="font-weight:600"></div></div>';
+  }else if(tab==="Summary"){
+    var y2=cm.getFullYear(),ym=y2+"-"+p2(cm.getMonth()+1),inM=function(a){return a.filter(function(x){return x.d.slice(0,7)===ym;});},E=inM(S.exp),V=inM(S.sav),cats={},nd=new Date(y2,cm.getMonth()+1,0).getDate();
+    if(ym===today().slice(0,7))nd=new Date().getDate();
+    E.forEach(function(x){var k=x.cat.trim().toLowerCase();cats[k]=(cats[k]||0)+x.amt;});
+    var tot=sum(E),keys=Object.keys(cats).sort(function(a,b){return cats[b]-cats[a];});
+    h='<div class="card">'+nav()+'<p>Spent: <b class="red">'+fmt(tot)+'</b></p><p>Saved: <b class="green">'+fmt(sum(V))+'</b></p><p>Average spent per day: <b>'+fmt(tot/nd)+'</b></p><p class="muted">'+E.length+' expenses, '+V.length+' savings entries</p></div><div class="card"><h2>Spending by item</h2>'+(keys.map(function(k){return '<div class="item"><span>'+esc(k.charAt(0).toUpperCase()+k.slice(1))+'</span><span>'+fmt(cats[k])+' <span class="muted">('+Math.round(cats[k]/tot*100)+'%)</span></span></div>';}).join("")||'<p class="muted">No expenses this month.</p>')+'</div>';
+  }else if(tab==="Backup"){
+    h='<div class="card"><h2>Backup and restore</h2><p class="muted">Copy or download your data now and then. To restore, paste a backup into the box (or choose a file) and press Restore.</p><textarea id="bk" style="min-height:140px">'+esc(JSON.stringify(S))+'</textarea><div class="row" style="margin-top:8px"><button id="bkCopy">Copy backup</button><button id="bkDl">Download file</button><button id="bkRs">Restore from box</button></div><div class="row"><input type="file" id="bkFile" accept=".json,application/json"></div><p id="bkMsg" class="muted"></p></div>';
   }else if(tab==="Calendar"){
     var y=cm.getFullYear(),m=cm.getMonth(),first=new Date(y,m,1).getDay(),n=new Date(y,m+1,0).getDate();
     h='<div class="card"><div class="top"><button class="ghost" id="pm">&lt;</button><b>'+cm.toLocaleDateString([], {month:"long",year:"numeric"})+'</b><button class="ghost" id="nm">&gt;</button></div><div class="cal">'+
@@ -83,8 +97,8 @@ function render(){
     h+='</div></div><div class="card"><h2>'+sel+'</h2><p>Spent: <b class="red">'+fmt(sum(on(S.exp,sel)))+'</b> &middot; Saved: <b class="green">'+fmt(sum(on(S.sav,sel)))+'</b></p>'+
       on(S.notes,sel).map(function(x){return '<p class="muted">'+esc(x.text)+'</p>';}).join("")+'<p class="muted">Red = expenses, green = savings, grey = notes.</p></div>';
   }else{
-    h='<div class="card"><h2>Add note</h2>'+dateRow()+'<textarea id="nt" placeholder="Write a note"></textarea><div class="row" style="margin-top:8px"><button id="addNt">Save note</button></div></div><div class="card"><h2>All notes</h2>'+
-      (S.notes.slice().sort(function(a,b){return a.d<b.d?1:-1;}).map(function(x){return '<div class="item"><span><span class="muted">'+x.d+'</span><br>'+esc(x.text)+'</span><button class="ghost" data-deln="'+x.id+'">x</button></div>';}).join("")||'<p class="muted">No notes yet.</p>')+'</div>';
+    h='<div class="card"><h2>'+(cur("notes")?"Edit note":"Add note")+'</h2>'+dateRow()+'<textarea id="nt" placeholder="Write a note">'+(cur("notes")?esc(cur("notes").text):"")+'</textarea><div class="row" style="margin-top:8px"><button id="addNt">'+(cur("notes")?"Update note":"Save note")+'</button>'+(cur("notes")?'<button class="ghost" id="cancel">Cancel</button>':"")+'</div></div><div class="card"><h2>All notes</h2>'+
+      (S.notes.slice().sort(function(a,b){return a.d<b.d?1:-1;}).map(function(x){return '<div class="item"><span><span class="muted">'+x.d+'</span><br>'+esc(x.text)+'</span><span><button class="ghost" data-edn="'+x.id+'">Edit</button> <button class="ghost" data-deln="'+x.id+'">Delete</button></span></div>';}).join("")||'<p class="muted">No notes yet.</p>')+'</div>';
   }
   v.innerHTML=h;
 }
@@ -100,14 +114,16 @@ function val(i){var e=document.getElementById(i);return e?e.value:"";}
 document.addEventListener("click",function(e){
   var t=e.target,a=function(k){return t.getAttribute(k);},dt=val("dt");
   if(dt)sel=dt;
-  if(a("data-tab")){tab=a("data-tab");render();return;}
+  if(a("data-tab")){tab=a("data-tab");ed=null;render();return;}
+  if(a("data-edx")||a("data-eds")||a("data-edn")){var k=a("data-edx")?"exp":a("data-eds")?"sav":"notes",i=a("data-edx")||a("data-eds")||a("data-edn"),en=S[k].filter(function(x){return x.id===i;})[0];if(en){ed={k:k,id:i};sel=en.d;render();}return;}
+  if(t.id==="cancel"){ed=null;render();return;}
   if(a("data-day")){sel=a("data-day");render();return;}
-  if(a("data-delx")){S.exp=S.exp.filter(function(x){return x.id!==a("data-delx");});save();render();return;}
-  if(a("data-dels")){S.sav=S.sav.filter(function(x){return x.id!==a("data-dels");});save();render();return;}
-  if(a("data-deln")){S.notes=S.notes.filter(function(x){return x.id!==a("data-deln");});save();render();return;}
-  if(t.id==="addEx"){var r=parseExp(val("ex").trim());if(!r){alert("Try something like: food-shs 1000");return;}S.exp.push({id:id(),d:sel,cat:r.cat,amt:r.amt});save();render();}
-  if(t.id==="addSv"){var n=parseFloat(val("sv"));if(!(n>0))return;S.sav.push({id:id(),d:sel,amt:n});save();render();}
-  if(t.id==="addNt"){var x=val("nt").trim();if(!x)return;S.notes.push({id:id(),d:sel,text:x});save();render();}
+  if(a("data-delx")){if(confirm("Delete this expense?")){S.exp=S.exp.filter(function(x){return x.id!==a("data-delx");});save();}render();return;}
+  if(a("data-dels")){if(confirm("Delete this saving?")){S.sav=S.sav.filter(function(x){return x.id!==a("data-dels");});save();}render();return;}
+  if(a("data-deln")){if(confirm("Delete this note?")){S.notes=S.notes.filter(function(x){return x.id!==a("data-deln");});save();}render();return;}
+  if(t.id==="addEx"){var r=parseExp(val("ex").trim());if(!r){alert("Try something like: food-shs 1000");return;}var c=cur("exp");if(c){c.d=sel;c.cat=r.cat;c.amt=r.amt;ed=null;}else S.exp.push({id:id(),d:sel,cat:r.cat,amt:r.amt});save();render();}
+  if(t.id==="addSv"){var n=parseFloat(val("sv"));if(!(n>0))return;var c=cur("sav");if(c){c.d=sel;c.amt=n;ed=null;}else S.sav.push({id:id(),d:sel,amt:n});save();render();}
+  if(t.id==="addNt"){var x=val("nt").trim();if(!x)return;var c=cur("notes");if(c){c.d=sel;c.text=x;ed=null;}else S.notes.push({id:id(),d:sel,text:x});save();render();}
   if(t.id==="pm"){cm=new Date(cm.getFullYear(),cm.getMonth()-1,1);render();}
   if(t.id==="nm"){cm=new Date(cm.getFullYear(),cm.getMonth()+1,1);render();}
   if(t.id==="useTot"){document.getElementById("have").value=sum(S.sav);}
@@ -120,10 +136,27 @@ document.addEventListener("click",function(e){
       var days=Math.ceil((new Date(b+"T00:00:00")-new Date(today()+"T00:00:00"))/864e5);
       o.textContent=days>0?"Save about "+fmt(left/days)+" per day for "+days+" days.":"Pick a date in the future.";}
   }
+  if(t.id==="bkCopy"){var b=document.getElementById("bk");b.select();var ok=false;try{ok=document.execCommand("copy");}catch(x){}bm(ok?"Copied. Paste it somewhere safe, like a note or an email to yourself.":"Could not copy automatically. The text is selected, so copy it by hand.");}
+  if(t.id==="bkDl"){try{var bl=new Blob([JSON.stringify(S,null,2)],{type:"application/json"}),u=URL.createObjectURL(bl),l=document.createElement("a");l.href=u;l.download="money-planner-backup-"+today()+".json";document.body.appendChild(l);l.click();l.remove();bm("If nothing downloaded, use Copy backup instead. Downloads can be blocked inside a preview.");}catch(x){bm("Download failed. Use Copy backup instead.");}}
+  if(t.id==="bkRs")restore(val("bk"));
   if(t.id==="pdf")printReport();
 });
-document.addEventListener("change",function(e){if(e.target.id==="dt"){sel=e.target.value;if(tab==="Expenses"||tab==="Savings")render();}});
+document.addEventListener("change",function(e){
+  if(e.target.id==="dt"){sel=e.target.value;if(!ed&&(tab==="Expenses"||tab==="Savings"))render();}
+  if(e.target.id==="bkFile"){var f=e.target.files[0];if(!f)return;var fr=new FileReader();fr.onload=function(){document.getElementById("bk").value=fr.result;bm("File loaded. Press Restore from box to apply it.");};fr.onerror=function(){bm("Could not read that file.");};fr.readAsText(f);}
+});
 
+function bm(m){var e=document.getElementById("bkMsg");if(e)e.textContent=m;}
+function restore(txt){
+  var d;try{d=JSON.parse(txt);}catch(x){bm("That is not valid backup text.");return;}
+  if(!d||!Array.isArray(d.exp)||!Array.isArray(d.sav)){bm("That does not look like a Money Planner backup.");return;}
+  var base=function(x){return x&&x.id&&typeof x.d==="string"&&x.d.length===10;};
+  var ne=d.exp.filter(function(x){return base(x)&&typeof x.amt==="number"&&typeof x.cat==="string";}),
+      ns=d.sav.filter(function(x){return base(x)&&typeof x.amt==="number";}),
+      nn=(Array.isArray(d.notes)?d.notes:[]).filter(function(x){return base(x)&&typeof x.text==="string";});
+  if(!confirm("Replace all current data with this backup ("+ne.length+" expenses, "+ns.length+" savings, "+nn.length+" notes)?"))return;
+  S={exp:ne,sav:ns,notes:nn};save();render();bm("Backup restored.");
+}
 function printReport(){
   var ym=sel.slice(0,7),inM=function(a){return a.filter(function(x){return x.d.slice(0,7)===ym;}).sort(function(a,b){return a.d>b.d?1:-1;});};
   var E=inM(S.exp),V=inM(S.sav),cats={};
